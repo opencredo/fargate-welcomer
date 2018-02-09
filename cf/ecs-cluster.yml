@@ -1,0 +1,118 @@
+---
+Description: "This template creates an ECS Cluster, Load Balancer and Required Security Groups\n"
+Outputs:
+  Listener:
+    Description: "A reference to a port 80 listener"
+    Value: !Ref LoadBalancerListener
+    Export:
+      Name: !Sub "${EnvironmentName}-LoadBalancerListener"
+  LoadBalancer:
+    Description: "A reference to the Application Load Balancer"
+    Value: !Ref LoadBalancer
+    Export:
+      Name: !Sub "${EnvironmentName}-LoadBalancer"
+  LoadBalancerUrl:
+    Description: "The URL of the ALB"
+    Value: !GetAtt LoadBalancer.DNSName
+    Export:
+      Name: !Sub "${EnvironmentName}-LoadBalancerUrl"
+  ServiceSecurityGroup:
+    Description: Security Group That Services should use
+    Value: !Ref ServiceSecurityGroup
+    Export:
+      Name: !Sub "${EnvironmentName}-ServiceSecurityGroup"
+  VPC:
+    Description: "The ID of the Environment VPC"
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${EnvironmentName}-VPCID"
+  ServiceSubnetOne:
+    Description: "The Subnet Services Should Be Deployed To"
+    Value: !Ref PublicSubnetOne
+    Export:
+      Name: !Sub "${EnvironmentName}-ServiceSubnetOne"
+  ServiceSubnetTwo:
+    Description: "The Subnet Services Should Be Deployed To"
+    Value: !Ref PublicSubnetTwo
+    Export:
+      Name: !Sub "${EnvironmentName}-ServiceSubnetTwo"
+  ClusterName:
+    Description: "The Cluster Reference for the Created ECS Cluster"
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub "${EnvironmentName}-ClusterName"
+
+Parameters:
+  EnvironmentName:
+    Description: "An environment name that will be prefixed to resource names"
+    Type: String
+  PublicSubnetOne:
+    Description: "Choose which subnets the Application Load Balancer should be deployed to"
+    Type: "AWS::EC2::Subnet::Id"
+  PublicSubnetTwo:
+    Description: "Choose which subnets the Application Load Balancer should be deployed to"
+    Type: "AWS::EC2::Subnet::Id"
+  VPC:
+    Description: "Choose which VPC the Application Load Balancer should be deployed to"
+    Type: "AWS::EC2::VPC::Id"
+
+Resources:
+  ECSCluster:
+    Type: "AWS::ECS::Cluster"
+    Properties:
+      ClusterName: !Sub ${EnvironmentName}-cluster
+  DefaultTargetGroup:
+    Properties:
+      Name: !Sub "${EnvironmentName}-default"
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Sub ${VPC}
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+  LoadBalancer:
+    Properties:
+      Name: !Ref EnvironmentName
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets:
+        - !Sub ${PublicSubnetOne}
+        - !Sub ${PublicSubnetTwo}
+      Tags:
+        -
+          Key: Name
+          Value: !Ref EnvironmentName
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+  LoadBalancerListener:
+    Properties:
+      DefaultActions:
+        -
+          TargetGroupArn: !Ref DefaultTargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+  LoadBalancerSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Access to the load balancer that sits in front of ECS"
+      SecurityGroupIngress:
+        -
+          CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+      Tags:
+        -
+          Key: Name
+          Value: !Sub "${EnvironmentName}-LoadBalancers"
+      VpcId: !Sub ${VPC}
+  ServiceSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Access to the load balancer that sits in front of ECS"
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+          IpProtocol: -1
+      Tags:
+        -
+          Key: Name
+          Value: !Sub "${EnvironmentName}-LoadBalancers"
+      VpcId: !Sub ${VPC}

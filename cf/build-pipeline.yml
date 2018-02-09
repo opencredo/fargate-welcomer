@@ -86,7 +86,7 @@ Resources:
               Version: 1
             RunOrder: 1
             Configuration:
-                BranchName: step-3
+                BranchName: step-5
                 PollForSourceChanges: false
                 RepositoryName: fargate-welcomer
             OutputArtifacts:
@@ -106,6 +106,40 @@ Resources:
               - Name: MyAppBuild
             InputArtifacts:
               - Name: MyApp
+        - Name: Test
+          Actions:
+          - Name: Deploy
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: 1
+            RunOrder: 1
+            Configuration:
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_IAM
+              ParameterOverrides: !Sub  '{ "Repository":  "${Repository}", "EnvironmentName": "test"}'
+              RoleArn: arn:aws:iam::639943058375:role/CloudFormerAdmin
+              StackName: !Sub "${Repository}-test"
+              TemplateConfiguration: MyAppBuild::overrides.json
+              TemplatePath: MyApp::cf/service.yml
+            InputArtifacts:
+              - Name: MyAppBuild
+              - Name: MyApp
+  CloudFormerAdministrator:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument: |
+        {
+            "Statement": [{
+                "Effect": "Allow",
+                "Principal": { "Service": [ "cloudformation.amazonaws.com" ]},
+                "Action": [ "sts:AssumeRole" ]
+            }]
+        }
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AdministratorAccess"
 
 
   CodeCommitTriggerRole:
@@ -145,7 +179,7 @@ Resources:
           referenceType:
             - branch
           referenceName:
-            - step-3
+            - step-5
       Name: WelcomerCodeCommitRule
       Targets:
       - Arn: !Sub arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${BuildPipeline}
