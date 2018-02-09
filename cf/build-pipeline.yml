@@ -1,0 +1,153 @@
+Resources:
+  Repository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument: |
+        {
+            "Statement": [{
+                "Effect": "Allow",
+                "Principal": { "Service": [ "codebuild.amazonaws.com" ]},
+                "Action": [ "sts:AssumeRole" ]
+            }]
+        }
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Resource: !Sub arn:aws:codecommit:us-east-1:${AWS::AccountId}:fargate-welcomer
+                Effect: Allow
+                Action:
+                  - codecommit:GitPull
+              - Resource: "*"
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - ecr:GetAuthorizationToken
+              - Resource: !Sub ${PipelineStorageBucket.Arn}/*
+                Effect: Allow
+                Action:
+                  - s3:*
+              - Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${Repository}
+                Effect: Allow
+                Action:
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: "CODEPIPELINE"
+      Source:
+        Type: "CODEPIPELINE"
+      Environment:
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/docker:1.12.1"
+        Type: "LINUX_CONTAINER"
+        EnvironmentVariables:
+          - Name: REPOSITORY_URI
+            Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Repository}
+      Name: !Ref AWS::StackName
+      ServiceRole: !Ref CodeBuildServiceRole
+  PipelineStorageBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      AccessControl: Private
+
+  BuildPipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      ArtifactStore:
+        Type: "S3"
+        Location: !Ref PipelineStorageBucket
+      Name: welcomer-cf
+      RoleArn: arn:aws:iam::639943058375:role/AWS-CodePipeline-Service
+      Stages:
+        - Name: Checkout
+          Actions:
+          - Name: Checkout
+            ActionTypeId:
+              Category: Source
+              Owner: AWS
+              Provider: CodeCommit
+              Version: 1
+            RunOrder: 1
+            Configuration:
+                BranchName: step-3
+                PollForSourceChanges: false
+                RepositoryName: fargate-welcomer
+            OutputArtifacts:
+              - Name: MyApp
+        - Name: Build
+          Actions:
+          - Name: Build
+            ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Provider: CodeBuild
+              Version: 1
+            RunOrder: 1
+            Configuration:
+                ProjectName: !Ref CodeBuildProject
+            OutputArtifacts:
+              - Name: MyAppBuild
+            InputArtifacts:
+              - Name: MyApp
+
+
+  CodeCommitTriggerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument: |
+        {
+            "Statement": [{
+                "Effect": "Allow",
+                "Principal": { "Service": [ "events.amazonaws.com" ]},
+                "Action": [ "sts:AssumeRole" ]
+            }]
+        }
+      Policies:
+        - PolicyName: AllowTriggeringOfPipelineFromCommit
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Resource: !Sub arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${BuildPipeline}
+                Effect: Allow
+                Action:
+                  - codepipeline:StartPipelineExecution
+
+  PipelineNotification:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: Notify CodeBuild of new commits
+      EventPattern:
+        source:
+         - aws.codecommit
+        detail-type:
+         - CodeCommit Repository State Change
+        resources:
+          -  !Sub arn:aws:codecommit:us-east-1:${AWS::AccountId}:fargate-welcomer
+        detail:
+          referenceType:
+            - branch
+          referenceName:
+            - step-3
+      Name: WelcomerCodeCommitRule
+      Targets:
+      - Arn: !Sub arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${BuildPipeline}
+        Id: WelcomerBuildPipeline
+        RoleArn: !GetAtt CodeCommitTriggerRole.Arn
