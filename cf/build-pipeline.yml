@@ -126,6 +126,26 @@ Resources:
             InputArtifacts:
               - Name: MyAppBuild
               - Name: MyApp
+        - Name: Production
+          Actions:
+          - Name: Deploy
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: 1
+            RunOrder: 1
+            Configuration:
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_IAM
+              ParameterOverrides: !Sub  '{ "Repository":  "${Repository}", "EnvironmentName": "prod"}'
+              RoleArn: arn:aws:iam::639943058375:role/CloudFormerAdmin
+              StackName: !Sub "${Repository}-prod"
+              TemplateConfiguration: MyAppBuild::overrides.json
+              TemplatePath: MyApp::cf/service.yml
+            InputArtifacts:
+              - Name: MyAppBuild
+              - Name: MyApp
   CloudFormerAdministrator:
     Type: AWS::IAM::Role
     Properties:
